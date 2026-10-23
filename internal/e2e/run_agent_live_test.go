@@ -3,6 +3,7 @@
 package e2e
 
 import (
+	"os"
 	"strings"
 	"syscall"
 	"testing"
@@ -123,4 +124,76 @@ func TestSelectedRunSurvivesDaemonRestart(t *testing.T) {
 		t.Fatalf("resumed run status: %v\n%s", err, statusOut)
 	}
 	t.Logf("resumed selected run:\n%s", statusOut)
+}
+
+func TestSelectedRunCannotDisplaceActiveDefaultRun(t *testing.T) {
+	h := NewHarness(t, SetupOpts{Agent: "claude", Scenario: writeReviewAgentsRoutingScenario(t)})
+	if out, err := h.Run("init"); err != nil {
+		t.Fatalf("init: %v\n%s", err, out)
+	}
+	const branch = "feature/active-default-agent"
+	h.CommitChange(branch, "feature.txt", "change\n", "add feature")
+	operator := h.AddWorktree(branch)
+	if out, err := h.RunInDir(operator, "axi", "run", "--intent", "validate feature"); err != nil || !strings.Contains(out, "gate:") {
+		t.Fatalf("default run did not park: %v\n%s", err, out)
+	}
+	parked := waitForStepStatus(t, h, branch, types.StepReview, types.StepStatusAwaitingApproval, 60*time.Second)
+	if parked.RunAgent != "" {
+		t.Fatalf("default run acquired an agent pin: %+v", parked)
+	}
+	out, err := h.RunInDir(operator, "axi", "run", "--agent", "codex", "--intent", "validate feature")
+	if err == nil || !strings.Contains(out, "different agent selection") {
+		t.Fatalf("conflicting selection was accepted or had wrong refusal: %v\n%s", err, out)
+	}
+	assertParkedRunIntact(t, h, parked.ID, branch)
+	t.Logf("conflicting selection refused; default run remains parked:\n%s", out)
+}
+
+func TestSelectedRunRetryKeepsAgentAfterDefaultChanges(t *testing.T) {
+	scenario := writeReviewAgentsRoutingScenario(t)
+	goodScenario, err := os.ReadFile(scenario)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(scenario, []byte("actions: [\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h := NewHarness(t, SetupOpts{Agent: "claude", Scenario: scenario})
+	if out, err := h.Run("init"); err != nil {
+		t.Fatalf("init: %v\n%s", err, out)
+	}
+	const branch = "feature/selected-retry"
+	h.CommitChange(branch, "feature.txt", "change\n", "add feature")
+	operator := h.AddWorktree(branch)
+	_, _ = h.RunInDir(operator, "axi", "run", "--agent", "codex", "--intent", "validate feature")
+	failed := h.WaitForRun(branch, 60*time.Second)
+	if failed.Status != types.RunFailed || failed.RunAgent != agentcfg.RunAgentCodex {
+		t.Fatalf("source run did not fail with selected agent: %+v", failed)
+	}
+	if err := os.WriteFile(scenario, goodScenario, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h.globalConfigExtra = "review_agents:\n  reviewer: {agent: claude}\n  fixer: {agent: claude}\n"
+	h.writeGlobalConfig()
+	out, err := h.RunInDir(operator, "axi", "retry", "--run", failed.ID)
+	if err != nil {
+		t.Fatalf("retry selected run: %v\n%s", err, out)
+	}
+	retried := waitForStepStatus(t, h, branch, types.StepReview, types.StepStatusAwaitingApproval, 60*time.Second)
+	if retried.ID == failed.ID || retried.RunAgent != agentcfg.RunAgentCodex {
+		t.Fatalf("retry changed agent selection: %+v", retried)
+	}
+	if answer, err := h.RunInDir(operator, "axi", "respond", "--action", "approve"); err != nil {
+		t.Fatalf("finish retried run: %v\n%s", err, answer)
+	}
+	completed := h.WaitForRun(branch, 60*time.Second)
+	if completed.ID != retried.ID || completed.Status != types.RunCompleted || completed.RunAgent != agentcfg.RunAgentCodex {
+		t.Fatalf("retry did not finish with selected agent: %+v", completed)
+	}
+	for _, invocation := range invocationsForRun(t, h, completed.ID) {
+		if invocation.Agent != "codex" {
+			t.Fatalf("retry invoked %s, want codex", invocation.Agent)
+		}
+	}
+	t.Logf("selected retry retained codex through completion:\n%s", out)
 }

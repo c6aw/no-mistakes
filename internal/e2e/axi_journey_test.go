@@ -414,6 +414,14 @@ func TestAxiCustodyRecoveryJourney(t *testing.T) {
 		t.Fatalf("operator branch moved without explicit recovery: %s", got)
 	}
 	runsBefore := len(h.Runs())
+	selectedOut, selectedErr := h.RunInDir(operator, "rerun", "--agent", "codex")
+	if selectedErr == nil || !strings.Contains(selectedOut, "has not returned branch custody") {
+		t.Fatalf("selected rerun before custody recovery was not refused: %v\n%s", selectedErr, selectedOut)
+	}
+	if got := len(h.Runs()); got != runsBefore {
+		t.Fatalf("refused selected rerun changed run count from %d to %d", runsBefore, got)
+	}
+	t.Logf("selected rerun refused until custody recovery:\n%s", selectedOut)
 	tracePath := filepath.Join(t.TempDir(), "blocked-run-git-trace.json")
 	blockedOut, blockedErr := h.RunInDirWithEnv(operator, map[string]string{"GIT_TRACE2_EVENT": tracePath}, "axi", "run", "--intent", "must recover custody before starting over")
 	if blockedErr == nil {

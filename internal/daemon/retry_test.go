@@ -201,6 +201,7 @@ type retryFixture struct {
 type retryFixtureOptions struct {
 	beforeSource func(t *testing.T, f *retryFixture)
 	profile      *agentcfg.PiProfile
+	runAgent     agentcfg.RunAgent
 	plan         *verificationplan.Snapshot
 	failInTest   bool
 	twoHop       bool
@@ -225,11 +226,7 @@ func newRetryFixture(t *testing.T, opts retryFixtureOptions) *retryFixture {
 	if opts.beforeSource != nil {
 		opts.beforeSource(t, f)
 	}
-	var profiles []*agentcfg.PiProfile
-	if opts.profile != nil {
-		profiles = append(profiles, opts.profile)
-	}
-	source, err := d.InsertRunWithIntentAndLaunchNonce(repo.ID, "main", submitted, submitted, &db.RunIntent{Summary: "keep it", Source: db.RunIntentSourceAgent, Score: 1}, "", "", "", "", false, opts.plan, profiles...)
+	source, err := d.InsertRunWithAgent(repo.ID, "main", submitted, submitted, &db.RunIntent{Summary: "keep it", Source: db.RunIntentSourceAgent, Score: 1}, "", "", "", "", false, opts.plan, opts.profile, opts.runAgent)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -648,6 +645,28 @@ func TestRetryStartsWhenEveryProofHolds(t *testing.T) {
 	}
 	if got := f.executions.Load(); got != 2 {
 		t.Fatalf("executed %d steps, want review and test only", got)
+	}
+}
+
+func TestRetryPreservesSelectedAgentAcrossConfiguredDefaultChange(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the agent stand-ins are POSIX shell scripts")
+	}
+	f := newRetryFixture(t, retryFixtureOptions{
+		runAgent:   agentcfg.RunAgentCodex,
+		failInTest: true,
+		invocation: db.AgentInvocation{Agent: "codex", Model: "gpt-5", Purpose: "review", Round: 1},
+		beforeSource: func(t *testing.T, f *retryFixture) {
+			writeFakeAgents(t, f.p, "claude", "review_agents:\n  reviewer: {agent: claude}\n  fixer: {agent: claude}\n", "claude", "codex")
+		},
+	})
+	result, err := f.retry(t, f.source.ID)
+	if err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+	run := waitForRunTerminalState(t, f.d, result.RunID)
+	if run.Status != types.RunCompleted || run.RunAgent != agentcfg.RunAgentCodex || result.Step != types.StepTest {
+		t.Fatalf("retry lost selected agent: result=%+v run=%+v", result, run)
 	}
 }
 

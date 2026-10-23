@@ -195,6 +195,8 @@ Before starting a run that may omit the section (this flag set, the global `inte
 Under the flag the PR-drafting turns receive no intent text at all and draft from the diff and commit messages only; every other step prompt keeps the full intent.
 The same omit-to-reattach rule applies to `--model`/`--effort` against an active run's [pinned Pi profile](/no-mistakes/reference/global-config/#per-run-pi-profiles); a different selection cannot change that pin.
 
+`axi run --agent codex` selects Codex for this run's review, fix, documentation, test evidence, rebase, and CI repair turns. The selection is stored with the run and survives gates, retries, and daemon recovery. It takes precedence over the operator's configured agent and the trusted repository agent setting for this run only; runs without `--agent` retain those defaults. `--agent` cannot be combined with the Pi `--model` or `--effort` flags. A selected run refuses an unavailable Codex executable before replacing an active run. Reattaching with a different explicit selection is refused; omit `--agent` to reattach. An older daemon that cannot confirm support for this selection is refused before launch.
+
 ### Closing issues
 
 `--closes` declares an issue the PR fully resolves, so merging the PR closes it through the forge's native closing keywords. Repeat it for each issue. A value is a same-repository issue number (`--closes 95`) or a project-qualified reference (`--closes owner/repo#95`, or `--closes group/subgroup/repo#95` for a GitLab project nested under subgroups); anything else, including `#95`, is rejected before a run starts. References are deduplicated case-insensitively and rendered in a deterministic order, one `Closes` line each, in the PR body's `## Issues` section (see the [PR step](/no-mistakes/reference/pipeline-steps/#pr)).
@@ -620,11 +622,14 @@ Rerun the pipeline for the current branch.
 no-mistakes rerun
 no-mistakes rerun --intent "the revised user goal"
 no-mistakes rerun --model openai-codex/gpt-5.4 --effort high
+no-mistakes rerun --agent codex
 no-mistakes rerun --no-publish-intent
 no-mistakes rerun --closes 95
 ```
 
 `--model` and `--effort` opt this new run into a [pinned Pi profile](/no-mistakes/reference/global-config/#per-run-pi-profiles), with the same precedence and validation as `axi run`. Omitting both retains current global-config behavior; a prior run's model pin is not inherited.
+
+`--agent codex` selects Codex for a new rerun only. It cannot change the agent of an active or parked run. For a terminal prior run, selected rerun requires returned branch custody and an exact match between its recorded terminal head, the clean local head, and the gate branch head. If the preserved head has not reached the gate branch, follow `branch_sync.next_action` and submit the recovered head with a fresh `axi run --agent codex`. A rerun inherits the prior open PR identity when present; if that identity cannot be inherited, selected rerun refuses. Omit `--agent` to keep ordinary rerun behavior.
 
 Starts a new pipeline run from the current gate branch, except when the latest
 terminal run has a verified unpublished head whose custody has not been
@@ -649,7 +654,7 @@ an override is recorded as newly supplied explicit intent, while fresh inference
 records the transcript source. Omission of the generated Intent section is always
 inherited from the selected prior run; `--no-publish-intent` and the global
 [`intent.publish_intent`](/no-mistakes/reference/global-config/#intent)
-default can only add omission, never remove it. If another run is active on that branch, rerun
+default can only add omission, never remove it. Without `--agent`, if another run is active on that branch, rerun
 cancels it before starting over. Treat rerun as a between-runs action after a
 failed or cancelled outcome; use `axi run` for separate local fixes, and do not
 use rerun to bypass a gate. When the run failed only because an agent invocation
@@ -663,6 +668,7 @@ failed step instead of repeating every completed step.
 | `--closes` | `string`, repeatable | (none) | Issue the PR fully resolves; adds to the [closing references](#closing-issues) inherited from the selected prior run |
 | `--model` | `string` | (none) | Pi provider/model ID for an immutable [per-run profile](/no-mistakes/reference/global-config/#per-run-pi-profiles) |
 | `--effort` | `string` | (none) | Pi reasoning effort for that profile; omitted fields inherit `agent_config.pi` |
+| `--agent` | `string` | (none) | Select `codex` for this new run after custody is returned; cannot combine with Pi profile flags |
 
 ## no-mistakes sync
 

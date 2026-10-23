@@ -11,7 +11,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/kunchenguid/no-mistakes/internal/agentcfg"
 	"github.com/kunchenguid/no-mistakes/internal/config"
 	"github.com/kunchenguid/no-mistakes/internal/custody"
 	"github.com/kunchenguid/no-mistakes/internal/db"
@@ -111,11 +110,7 @@ func (m *RunManager) HandleRetry(ctx context.Context, repoID, branch, runID, cal
 		if source.PRBaseBranch != nil {
 			prBaseBranch = strings.TrimSpace(*source.PRBaseBranch)
 		}
-		var profiles []*agentcfg.PiProfile
-		if source.PiProfile != nil {
-			profiles = append(profiles, source.PiProfile)
-		}
-		continuation, err := m.startRunWithIntentSourceLocked(ctx, repo, branch, source.HeadSHA, source.BaseSHA, "retry", nil, "", "", "", "", "", prBaseBranch, source.OmitIntent, inheritablePRURL(source), "", source.ClosingIssueRefs, launch, profiles...)
+		continuation, err := m.startRunWithIntentSourceLocked(ctx, repo, branch, source.HeadSHA, source.BaseSHA, "retry", nil, "", "", "", "", "", prBaseBranch, source.OmitIntent, inheritablePRURL(source), "", source.ClosingIssueRefs, launch, source.PiProfile, source.RunAgent)
 		link = launch.link
 		link.RunID = continuation
 		return continuation, err
@@ -256,6 +251,9 @@ func (m *RunManager) proveRetryConfiguration(ctx context.Context, repo *db.Repo,
 	}
 	cfg, currentRepoCfg, err := m.effectiveConfigBeforeRun(ctx, repo, source.HeadSHA, globalCfg, "retry configuration")
 	if err != nil {
+		return err
+	}
+	if err := cfg.ApplyRunAgent(source.RunAgent); err != nil {
 		return err
 	}
 	return m.proveConfigurationMatches(ctx, source, globalCfg, cfg, currentRepoCfg, pinned, checkpoint)

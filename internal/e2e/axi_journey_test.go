@@ -13,6 +13,7 @@ import (
 
 	toon "github.com/toon-format/toon-go"
 
+	"github.com/kunchenguid/no-mistakes/internal/agentcfg"
 	"github.com/kunchenguid/no-mistakes/internal/custody"
 	"github.com/kunchenguid/no-mistakes/internal/db"
 	"github.com/kunchenguid/no-mistakes/internal/ipc"
@@ -103,6 +104,7 @@ func branchSyncScenario(t *testing.T) string {
           line: 1
           description: "unsafe value needs validation"
           action: auto-fix
+          review_scope: source
       summary: "found one issue"
       risk_level: medium
       risk_rationale: "the unsafe value needs a guard"
@@ -496,12 +498,32 @@ func TestAxiCustodyRecoveryJourney(t *testing.T) {
 	if out, gitErr := h.runGit(context.Background(), operator, "merge-base", "--is-ancestor", preserved, rescoped); gitErr != nil {
 		t.Fatalf("rescope dropped preserved pipeline commits: %v\n%s", gitErr, out)
 	}
-	freshOut, err := h.RunInDir(operator, "axi", "run", "--intent", "validate the rescope on top of recovered commits")
+	beforeInvocations := len(h.AgentInvocations())
+	freshOut, err := h.RunInDir(operator, "axi", "run", "--agent", "codex", "--intent", "validate the rescope on top of recovered commits")
 	if err != nil {
 		t.Fatalf("fresh pipeline start after recovery: %v\n%s", err, freshOut)
 	}
 	if !strings.Contains(freshOut, "gate:") {
 		t.Fatalf("fresh pipeline did not start cleanly after recovery:\n%s", freshOut)
+	}
+	var selected *ipc.RunInfo
+	for _, candidate := range h.Runs() {
+		if candidate.ID != run.ID && candidate.Branch == "feature/recover-journey" {
+			selected = &candidate
+			break
+		}
+	}
+	if selected == nil || selected.RunAgent != agentcfg.RunAgentCodex || selected.SubmittedHeadSHA == nil || *selected.SubmittedHeadSHA != rescoped {
+		t.Fatalf("fresh selected run lost recovered commits: %+v", selected)
+	}
+	newInvocations := h.AgentInvocations()[beforeInvocations:]
+	if len(newInvocations) == 0 {
+		t.Fatal("fresh selected run made no agent invocation")
+	}
+	for _, invocation := range newInvocations {
+		if invocation.Agent != "codex" {
+			t.Fatalf("fresh selected run invoked %s, want codex", invocation.Agent)
+		}
 	}
 	t.Logf("end-user fresh-run result after custody return:\n%s", freshOut)
 }

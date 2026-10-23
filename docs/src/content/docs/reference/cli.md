@@ -139,6 +139,7 @@ no-mistakes axi run --intent "the user's goal" --closes 95 --closes owner/repo#1
 | `--closes` | `string`, repeatable | (none) | Issue the PR fully resolves (`95`, `owner/repo#95`, or a nested GitLab project path); see [Closing issues](#closing-issues) |
 | `--model` | `string` | (none) | Pi provider/model ID for an immutable [per-run profile](/no-mistakes/reference/global-config/#per-run-pi-profiles) |
 | `--effort` | `string` | (none) | Pi reasoning effort for that profile; omitted fields inherit `agent_config.pi` |
+| `--agent` | `string` | (none) | Select `codex` for every model-backed role of this run; cannot combine with Pi profile flags |
 | `--wait`        | `duration` | `8m`    | Maximum time for active-run lookup and run driving before the caller must reattach |
 | `--launch-nonce` | `string` | (none) | Non-secret correlation identifier for a durable pre-drive receipt; requires `--validation-generation` |
 | `--validation-generation` | `string` | (none) | Caller-selected validation generation bound to `--launch-nonce`; requires that flag |
@@ -195,7 +196,7 @@ Before starting a run that may omit the section (this flag set, the global `inte
 Under the flag the PR-drafting turns receive no intent text at all and draft from the diff and commit messages only; every other step prompt keeps the full intent.
 The same omit-to-reattach rule applies to `--model`/`--effort` against an active run's [pinned Pi profile](/no-mistakes/reference/global-config/#per-run-pi-profiles); a different selection cannot change that pin.
 
-`axi run --agent codex` selects Codex for this run's review, fix, documentation, test evidence, rebase, and CI repair turns. The selection is stored with the run and survives gates, retries, and daemon recovery. It takes precedence over the operator's configured agent and the trusted repository agent setting for this run only; runs without `--agent` retain those defaults. `--agent` cannot be combined with the Pi `--model` or `--effort` flags. A selected run refuses an unavailable Codex executable before replacing an active run. Reattaching with a different explicit selection is refused; omit `--agent` to reattach. An older daemon that cannot confirm support for this selection is refused before launch.
+`axi run --agent codex` selects Codex for every model-backed role of this run, including review, fixes, documentation, test evidence, PR drafting, rebase, and CI repair. The selection is stored with the run and survives gates, retry, and daemon recovery. It takes precedence over the configured agent, fallback list, and `review_agents` for this run and disables quota routing for it; runs without `--agent` retain those settings. `--agent` cannot be combined with the Pi `--model` or `--effort` flags. A selected run refuses an unavailable Codex executable before replacing an active run. Reattaching with a different explicit selection is refused; omit `--agent` to reattach. An older daemon that cannot confirm support for this selection is refused before launch.
 
 ### Closing issues
 
@@ -258,13 +259,13 @@ no-mistakes axi run --intent "the user's goal" \
 
 After durable creation or claim, AXI writes a TOON `launch_receipt` object to stdout **before** driving the run.
 The receipt remains available to a caller that captures stdout even if driving later stops at a gate or fails.
-It contains `run_id`, `disposition` (`created` or `reused`), `launch_nonce`, `validation_generation`, `branch`, `head_sha`, `submitted_head_sha`, and `intent_digest`.
+It contains `run_id`, `disposition` (`created` or `reused`), `launch_nonce`, `validation_generation`, `branch`, `head_sha`, `submitted_head_sha`, and `intent_digest`. A run selected with `--agent` also includes `run_agent`.
 Both head fields contain the full, immutable submitted commit SHA; `intent_digest` is the lowercase SHA-256 digest of the exact persisted intent bytes, including whitespace.
 Raw intent is not included in receipts, and generic run/status output does not expose the nonce binding or intent digest.
 
 The nonce is scoped to the repository and branch.
 The first successful receipt claim returns `created`; subsequent matching claims return `reused` for that same run, including after the gate or pipeline head advances.
-A conflicting submitted head, validation generation, intent, or [pinned Pi profile](/no-mistakes/reference/global-config/#per-run-pi-profiles) is refused.
+A conflicting submitted head, validation generation, intent, explicit agent selection, or [pinned Pi profile](/no-mistakes/reference/global-config/#per-run-pi-profiles) is refused.
 A different nonce creates a distinct run rather than reattaching to a same-head run; both post-receive creation and the up-to-date-push fallback follow this contract.
 The up-to-date-push fallback preserves the latest same-head run's PR URL unless its recorded PR state is closed or merged, including when an explicit `--base-branch` retargets that PR.
 An explicit `--base-branch` is persisted on creation and must match the stored per-run base on replay; omitting it on replay preserves the stored base.
@@ -395,6 +396,7 @@ no-mistakes axi status --run <id>
 When the resolved run is parked at an `awaiting_approval` or `fix_review` gate, its top-level `run:` or `other_branch_run:` object includes `awaiting_agent: parked <duration>` immediately after `status`.
 The field disappears after that run's gate is answered, on cancel, and on terminal outcomes; use it to distinguish a run waiting for the driving agent from one actively running, fixing, or watching CI.
 A pinned run also includes `pi_profile` with `model` and `effort`; see [per-run Pi profiles](/no-mistakes/reference/global-config/#per-run-pi-profiles).
+A run selected with `--agent` includes `run_agent: codex`.
 Status offers branch-scoped `axi respond` commands only for the current branch's implicitly resolved run. An explicitly selected gate stays inspection-only even when its branch matches, because a newer active run on that branch could receive the bare response command instead; the gate remains visible, its log commands retain `--run <id>`, and it names `axi respond --run <id>` as the response command.
 When a repository has no configured lint command and Document performs the combined Document/Lint housekeeping invocation, the run object includes `shared_work` evidence naming its `document+lint housekeeping` scope and the duration attributed to Document; Lint's own duration remains the cached-result handoff time.
 When the resolved run has a `running` or `fixing` step, the run object includes `active_steps`.
@@ -629,7 +631,7 @@ no-mistakes rerun --closes 95
 
 `--model` and `--effort` opt this new run into a [pinned Pi profile](/no-mistakes/reference/global-config/#per-run-pi-profiles), with the same precedence and validation as `axi run`. Omitting both retains current global-config behavior; a prior run's model pin is not inherited.
 
-`--agent codex` selects Codex for a new rerun only. It cannot change the agent of an active or parked run. For a terminal prior run, selected rerun requires either a verified terminal head with no unpublished pipeline commits or custody returned through branch sync. Its recorded terminal head, the clean local head, and the gate branch head must match exactly. If the preserved head has not reached the gate branch, follow `branch_sync.next_action` and submit the recovered head with a fresh `axi run --agent codex`. A rerun inherits the prior open PR identity when present; if that identity cannot be inherited, selected rerun refuses. Omit `--agent` to keep ordinary rerun behavior.
+`--agent codex` selects Codex for a new rerun only. It cannot change the agent of an active or parked run. A selected rerun requires either a verified terminal head with no unpublished pipeline commits or custody returned through branch sync. Its recorded terminal head, the clean local head, and the gate branch head must match exactly. If custody is outstanding, follow `branch_sync.next_action` first; if the preserved head has not reached the gate branch, submit the recovered head with a fresh `axi run --agent codex`. A rerun inherits the prior open PR identity when present; if that identity cannot be inherited, selected rerun refuses. Omit `--agent` to keep ordinary rerun behavior.
 
 Starts a new pipeline run from the current gate branch, except when the latest
 terminal run has a verified unpublished head whose custody has not been
@@ -668,7 +670,7 @@ failed step instead of repeating every completed step.
 | `--closes` | `string`, repeatable | (none) | Issue the PR fully resolves; adds to the [closing references](#closing-issues) inherited from the selected prior run |
 | `--model` | `string` | (none) | Pi provider/model ID for an immutable [per-run profile](/no-mistakes/reference/global-config/#per-run-pi-profiles) |
 | `--effort` | `string` | (none) | Pi reasoning effort for that profile; omitted fields inherit `agent_config.pi` |
-| `--agent` | `string` | (none) | Select `codex` for this new run when no custody is outstanding; cannot combine with Pi profile flags |
+| `--agent` | `string` | (none) | Select `codex` for this new run when custody is clear; cannot combine with Pi profile flags |
 
 ## no-mistakes sync
 
@@ -747,6 +749,7 @@ Runs with [quota-aware routing](/no-mistakes/reference/global-config/#quota_rout
 Use `--agents` for local, per-purpose agent performance aggregates: duration and the subprocess-vs-model time split, session mode, errors, the token totals (input, output, cache-read, cache-creation, fresh input, reasoning), and the model round-trip and tool-category activity histogram, with a `METRICS` coverage count that tells a real zero apart from missing instrumentation.
 Use `--run <id>` to inspect the individual agent invocations for one run - including each invocation's per-round token deltas next to the adapter counters, tool-category breakdown, workload size, finding count, and fallback reason - plus the total time parked at approval gates; it implies `--agents`.
 Pinned runs also print the requested [Pi profile](/no-mistakes/reference/global-config/#per-run-pi-profiles) above that table; `MODEL` there is served evidence, not the pin.
+Runs selected with `--agent` print the requested agent there; `AGENT` in the table is served evidence.
 The combined Document/Lint invocation is labeled `housekeeping (document+lint)` and attributed to `document+lint`, making its shared duration and tokens explicit without adding a second agent call.
 See [local telemetry](/no-mistakes/reference/environment/#what-stays-local-and-what-leaves-the-machine) for token definitions and missing-value semantics.
 A `--agents` token total is all-or-nothing: it reads `-` for the whole purpose unless every invocation in it reported that field, so one failed round that reported no usage leaves the group's total unknown instead of silently under-counted.

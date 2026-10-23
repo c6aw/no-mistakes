@@ -1250,7 +1250,7 @@ func (m *RunManager) HandleRerun(ctx context.Context, repoID, branch, previousRu
 	if latestForBranch == nil {
 		return "", fmt.Errorf("no previous run for branch %s", branch)
 	}
-	if runAgent != "" && latestForBranch.CustodyReturnedAt == nil {
+	if runAgent != "" && !selectedRerunCustodyReady(latestForBranch) {
 		return "", fmt.Errorf("refusing selected rerun: run %s has not returned branch custody; follow branch_sync.next_action first", latestForBranch.ID)
 	}
 	if runAgent != "" {
@@ -1326,6 +1326,19 @@ func inheritablePRURL(run *db.Run) string {
 		return ""
 	}
 	return strings.TrimSpace(*run.PRURL)
+}
+
+func selectedRerunCustodyReady(run *db.Run) bool {
+	if run.CustodyReturnedAt != nil {
+		return true
+	}
+	if run.TerminalHeadVerifiedAt == nil {
+		return false
+	}
+	if run.LastPushedSHA != nil {
+		return *run.LastPushedSHA == run.HeadSHA
+	}
+	return run.SubmittedHeadSHA != nil && *run.SubmittedHeadSHA == run.HeadSHA
 }
 
 func resolveRerunHead(ctx context.Context, gateDir, branch string, latest *db.Run) (string, error) {
@@ -1609,7 +1622,7 @@ func (m *RunManager) startRunWithIntentSourceLocked(ctx context.Context, repo *d
 			if err != nil {
 				return "", err
 			}
-			if !latest.Status.Terminal() || latest.CustodyReturnedAt == nil || latest.HeadSHA != headSHA || gateHead != headSHA || inheritablePRURL(latest) != inheritedPRURL {
+			if !latest.Status.Terminal() || !selectedRerunCustodyReady(latest) || latest.HeadSHA != headSHA || gateHead != headSHA || inheritablePRURL(latest) != inheritedPRURL {
 				return "", fmt.Errorf("refusing selected rerun: terminal head or PR identity changed before launch; follow branch_sync.next_action first")
 			}
 			break

@@ -69,7 +69,41 @@ func TestSelectedRerunCannotReplaceActiveRun(t *testing.T) {
 	}
 }
 
-func TestSelectedRerunRequiresReturnedExactTerminalHead(t *testing.T) {
+func TestSelectedRerunAfterUnchangedTerminalRunNeedsNoRecovery(t *testing.T) {
+	p, d := startTestDaemonWithSteps(t, func() []pipeline.Step { return []pipeline.Step{&allRolesProbeStep{}} })
+	repo, head := setupTestGitRepo(t, p, d, "released-selection")
+	prior, err := d.InsertRun(repo.ID, "main", head, head)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.UpdateRunStatus(prior.ID, types.RunCompleted); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewRunManager(d, p, nil).HandleRerun(context.Background(), repo.ID, "main", "", nil, "", "", false, head, "", nil, agentcfg.RunAgentCodex); err == nil || !strings.Contains(err.Error(), "custody") {
+		t.Fatalf("selected rerun guessed custody from an unverified head: %v", err)
+	}
+	if err := d.UpdateRunStatusWithVerifiedHead(prior.ID, types.RunCompleted, head); err != nil {
+		t.Fatal(err)
+	}
+	selectedCodex := writeSelectedAgentFixture(t, t.TempDir(), "codex", filepath.Join(t.TempDir(), "agents.log"))
+	if err := os.WriteFile(p.ConfigFile(), []byte("agent: claude\nagent_path_override:\n  codex: "+selectedCodex+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	before, err := d.GetRun(prior.ID)
+	if err != nil || before.CustodyReturnedAt != nil {
+		t.Fatalf("prior run has unexpected custody stamp: %+v %v", before, err)
+	}
+	id, err := NewRunManager(d, p, nil).HandleRerun(context.Background(), repo.ID, "main", "", nil, "", "", false, head, "", nil, agentcfg.RunAgentCodex)
+	if err != nil {
+		t.Fatalf("selected rerun from released head: %v", err)
+	}
+	run := waitForRunTerminalState(t, d, id)
+	if run.Status != types.RunCompleted || run.RunAgent != agentcfg.RunAgentCodex || run.SubmittedHeadSHA == nil || *run.SubmittedHeadSHA != head {
+		t.Fatalf("selected rerun = %+v", run)
+	}
+}
+
+func TestSelectedRerunRequiresCustodyAndExactTerminalHead(t *testing.T) {
 	p, d := startTestDaemonWithSteps(t, func() []pipeline.Step { return []pipeline.Step{&allRolesProbeStep{}} })
 	repo, submitted := setupTestGitRepo(t, p, d, "terminal-selection")
 	prior, err := d.InsertRun(repo.ID, "main", submitted, submitted)
@@ -82,11 +116,8 @@ func TestSelectedRerunRequiresReturnedExactTerminalHead(t *testing.T) {
 	if err := d.UpdateRunStatusWithVerifiedHead(prior.ID, types.RunFailed, preserved); err != nil {
 		t.Fatal(err)
 	}
-	if err := d.SetRunCustodyReturned(prior.ID); err != nil {
-		t.Fatal(err)
-	}
 	m := NewRunManager(d, p, nil)
-	if _, err := m.HandleRerun(context.Background(), repo.ID, "main", "", nil, "", "", false, preserved, "", nil, agentcfg.RunAgentCodex); err == nil || !strings.Contains(err.Error(), "terminal head") {
+	if _, err := m.HandleRerun(context.Background(), repo.ID, "main", "", nil, "", "", false, preserved, "", nil, agentcfg.RunAgentCodex); err == nil || !strings.Contains(err.Error(), "custody") {
 		t.Fatalf("selected rerun accepted stale gate head: %v", err)
 	}
 	runs, err := d.GetRunsByRepo(repo.ID)
@@ -105,6 +136,18 @@ func TestSelectedRerunRequiresReturnedExactTerminalHead(t *testing.T) {
 		t.Fatal(err)
 	}
 	gitCmd(t, repo.WorkingPath, "push", "gate", preserved+":refs/heads/main")
+	if _, err := m.HandleRerun(context.Background(), repo.ID, "main", "", nil, "", "", false, preserved, "", nil, agentcfg.RunAgentCodex); err == nil || !strings.Contains(err.Error(), "custody") {
+		t.Fatalf("selected rerun accepted outstanding custody: %v", err)
+	}
+	if _, err := m.startRun(context.Background(), repo, "main", preserved, submitted, "rerun", nil, "selected", "", false, "", nil, agentcfg.RunAgentCodex); err == nil || !strings.Contains(err.Error(), "before launch") {
+		t.Fatalf("selected rerun launch accepted outstanding custody: %v", err)
+	}
+	if runs, err := d.GetRunsByRepo(repo.ID); err != nil || len(runs) != 1 {
+		t.Fatalf("refused launch created a run: %+v %v", runs, err)
+	}
+	if err := d.SetRunCustodyReturned(prior.ID); err != nil {
+		t.Fatal(err)
+	}
 	id, err := m.HandleRerun(context.Background(), repo.ID, "main", "", nil, "", "", false, preserved, "", nil, agentcfg.RunAgentCodex)
 	if err != nil {
 		t.Fatalf("rerun after exact head adoption: %v", err)

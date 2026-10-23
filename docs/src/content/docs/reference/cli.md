@@ -629,7 +629,7 @@ no-mistakes rerun --closes 95
 
 `--model` and `--effort` opt this new run into a [pinned Pi profile](/no-mistakes/reference/global-config/#per-run-pi-profiles), with the same precedence and validation as `axi run`. Omitting both retains current global-config behavior; a prior run's model pin is not inherited.
 
-`--agent codex` selects Codex for a new rerun only. It cannot change the agent of an active or parked run. For a terminal prior run, selected rerun requires returned branch custody and an exact match between its recorded terminal head, the clean local head, and the gate branch head. If the preserved head has not reached the gate branch, follow `branch_sync.next_action` and submit the recovered head with a fresh `axi run --agent codex`. A rerun inherits the prior open PR identity when present; if that identity cannot be inherited, selected rerun refuses. Omit `--agent` to keep ordinary rerun behavior.
+`--agent codex` selects Codex for a new rerun only. It cannot change the agent of an active or parked run. For a terminal prior run, selected rerun requires either a verified terminal head with no unpublished pipeline commits or custody returned through branch sync. Its recorded terminal head, the clean local head, and the gate branch head must match exactly. If the preserved head has not reached the gate branch, follow `branch_sync.next_action` and submit the recovered head with a fresh `axi run --agent codex`. A rerun inherits the prior open PR identity when present; if that identity cannot be inherited, selected rerun refuses. Omit `--agent` to keep ordinary rerun behavior.
 
 Starts a new pipeline run from the current gate branch, except when the latest
 terminal run has a verified unpublished head whose custody has not been
@@ -668,7 +668,7 @@ failed step instead of repeating every completed step.
 | `--closes` | `string`, repeatable | (none) | Issue the PR fully resolves; adds to the [closing references](#closing-issues) inherited from the selected prior run |
 | `--model` | `string` | (none) | Pi provider/model ID for an immutable [per-run profile](/no-mistakes/reference/global-config/#per-run-pi-profiles) |
 | `--effort` | `string` | (none) | Pi reasoning effort for that profile; omitted fields inherit `agent_config.pi` |
-| `--agent` | `string` | (none) | Select `codex` for this new run after custody is returned; cannot combine with Pi profile flags |
+| `--agent` | `string` | (none) | Select `codex` for this new run when no custody is outstanding; cannot combine with Pi profile flags |
 
 ## no-mistakes sync
 

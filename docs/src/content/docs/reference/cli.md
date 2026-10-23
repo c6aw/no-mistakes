@@ -196,7 +196,7 @@ Before starting a run that may omit the section (this flag set, the global `inte
 Under the flag the PR-drafting turns receive no intent text at all and draft from the diff and commit messages only; every other step prompt keeps the full intent.
 The same omit-to-reattach rule applies to `--model`/`--effort` against an active run's [pinned Pi profile](/no-mistakes/reference/global-config/#per-run-pi-profiles); a different selection cannot change that pin.
 
-`axi run --agent codex` selects Codex for every model-backed role of this run, including review, fixes, documentation, test evidence, PR drafting, rebase, and CI repair. The selection is stored with the run and survives gates, retry, and daemon recovery. It takes precedence over the configured agent, fallback list, and `review_agents` for this run and disables quota routing for it; runs without `--agent` retain those settings. `--agent` cannot be combined with the Pi `--model` or `--effort` flags. A selected run refuses an unavailable Codex executable before replacing an active run. Reattaching with a different explicit selection is refused; omit `--agent` to reattach. An older daemon that cannot confirm support for this selection is refused before launch.
+`axi run --agent codex` selects Codex for every model-backed role of this run, including review, fixes, documentation, test evidence, PR drafting, rebase, and CI repair. The selection is stored with the run and survives gates, retry, and daemon recovery. It takes precedence over the configured agent, fallback list, and `review_agents` for this run and disables quota routing for it; runs without a selection retain those settings. `--agent` cannot be combined with the Pi `--model` or `--effort` flags. A selected run refuses an unavailable Codex executable before replacing an active run. Reattaching with a different selection is refused; omit `--agent` to reattach only when [`NM_REQUIRED_RUN_AGENT`](/no-mistakes/reference/environment/#nm_required_run_agent) is unset. An older daemon that cannot confirm support for this selection is refused before launch.
 
 ### Closing issues
 
@@ -631,7 +631,7 @@ no-mistakes rerun --closes 95
 
 `--model` and `--effort` opt this new run into a [pinned Pi profile](/no-mistakes/reference/global-config/#per-run-pi-profiles), with the same precedence and validation as `axi run`. Omitting both retains current global-config behavior; a prior run's model pin is not inherited.
 
-`--agent codex` selects Codex for a new rerun only. It cannot change the agent of an active or parked run. A selected rerun requires either a verified terminal head with no unpublished pipeline commits or custody returned through branch sync. Its recorded terminal head, the clean local head, and the gate branch head must match exactly. If custody is outstanding, follow `branch_sync.next_action` first; if the preserved head has not reached the gate branch, submit the recovered head with a fresh `axi run --agent codex`. A rerun inherits the prior open PR identity when present; if that identity cannot be inherited, selected rerun refuses. Omit `--agent` to keep ordinary rerun behavior.
+`--agent codex` selects Codex for a new rerun only. It cannot change the agent of an active or parked run. A selected rerun requires either a verified terminal head with no unpublished pipeline commits or custody returned through branch sync. Its recorded terminal head, the clean local head, and the gate branch head must match exactly. If custody is outstanding, follow `branch_sync.next_action` first; if the preserved head has not reached the gate branch, submit the recovered head with a fresh `axi run --agent codex`. A rerun inherits the prior open PR identity when present; if that identity cannot be inherited, selected rerun refuses. Omit `--agent` to keep ordinary rerun behavior when [`NM_REQUIRED_RUN_AGENT`](/no-mistakes/reference/environment/#nm_required_run_agent) is unset.
 
 Starts a new pipeline run from the current gate branch, except when the latest
 terminal run has a verified unpublished head whose custody has not been
@@ -656,7 +656,7 @@ an override is recorded as newly supplied explicit intent, while fresh inference
 records the transcript source. Omission of the generated Intent section is always
 inherited from the selected prior run; `--no-publish-intent` and the global
 [`intent.publish_intent`](/no-mistakes/reference/global-config/#intent)
-default can only add omission, never remove it. Without `--agent`, if another run is active on that branch, rerun
+default can only add omission, never remove it. Without a selected run agent, if another run is active on that branch, rerun
 cancels it before starting over. Treat rerun as a between-runs action after a
 failed or cancelled outcome; use `axi run` for separate local fixes, and do not
 use rerun to bypass a gate. When the run failed only because an agent invocation

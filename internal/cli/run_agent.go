@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/kunchenguid/no-mistakes/internal/agentcfg"
@@ -11,18 +12,27 @@ import (
 const runAgentPushOptionPrefix = "no-mistakes.run-agent="
 
 func runAgentFromFlags(cmd *cobra.Command) (agentcfg.RunAgent, error) {
-	if !cmd.Flags().Changed("agent") {
-		return "", nil
+	required, set := os.LookupEnv("NM_REQUIRED_RUN_AGENT")
+	if set && required != string(agentcfg.RunAgentCodex) {
+		return "", fmt.Errorf("NM_REQUIRED_RUN_AGENT requires codex")
 	}
-	value, _ := cmd.Flags().GetString("agent")
-	selection := agentcfg.RunAgent(value)
-	if selection == "" {
-		return "", fmt.Errorf("--agent requires codex")
+	selection := agentcfg.RunAgent(required)
+	if cmd.Flags().Changed("agent") {
+		value, _ := cmd.Flags().GetString("agent")
+		if value == "" {
+			return "", fmt.Errorf("--agent requires codex")
+		}
+		if selection != "" && value != required {
+			return "", fmt.Errorf("--agent conflicts with NM_REQUIRED_RUN_AGENT")
+		}
+		selection = agentcfg.RunAgent(value)
 	}
-	if err := selection.Validate(); err != nil {
-		return "", err
+	if selection != "" {
+		if err := selection.Validate(); err != nil {
+			return "", err
+		}
 	}
-	if cmd.Flags().Changed("model") || cmd.Flags().Changed("effort") {
+	if selection != "" && (cmd.Flags().Changed("model") || cmd.Flags().Changed("effort")) {
 		return "", fmt.Errorf("--agent cannot be combined with Pi --model or --effort")
 	}
 	return selection, nil

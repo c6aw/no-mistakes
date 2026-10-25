@@ -410,7 +410,7 @@ func tryRebase(ctx context.Context, sctx *pipeline.StepContext, targetRef string
 	}
 
 	sctx.Log(fmt.Sprintf("rebasing onto %s...", targetRef))
-	if _, err := git.Run(ctx, sctx.WorkDir, "rebase", targetRef); err != nil {
+	if _, err := git.Run(ctx, sctx.WorkDir, "-c", "rerere.enabled=false", "rebase", targetRef); err != nil {
 		conflictFiles := rebaseConflictFiles(ctx, sctx.WorkDir)
 		_, _ = git.Run(ctx, sctx.WorkDir, "rebase", "--abort")
 
@@ -433,7 +433,7 @@ func rebaseWithAgent(ctx context.Context, sctx *pipeline.StepContext, targetRef 
 	}
 
 	sctx.Log(fmt.Sprintf("rebasing onto %s...", targetRef))
-	if _, err := git.Run(ctx, sctx.WorkDir, "rebase", targetRef); err == nil {
+	if _, err := git.Run(ctx, sctx.WorkDir, "-c", "rerere.enabled=false", "rebase", targetRef); err == nil {
 		return nil
 	}
 
@@ -516,7 +516,7 @@ func integrationVerb(merging bool) string {
 // <branch>" subject rather than inventing a second convention for the same
 // commit.
 func mergeArgs(targetRef string) []string {
-	return []string{"merge", "--no-ff", "--no-edit", targetRef}
+	return []string{"-c", "rerere.enabled=false", "merge", "--no-ff", "--no-edit", targetRef}
 }
 
 // tryMerge is merge mode's counterpart to tryRebase: it attempts to merge

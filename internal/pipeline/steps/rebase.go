@@ -515,6 +515,9 @@ func integrationVerb(merging bool) string {
 // --no-edit keeps git's own "Merge remote-tracking branch 'origin/main' into
 // <branch>" subject rather than inventing a second convention for the same
 // commit.
+// rerere.enabled=false (also on both rebase calls) keeps an operator's global
+// rerere from pre-staging a saved resolution, which still exits 1 and would be
+// misreported as a failed non-conflict integration.
 func mergeArgs(targetRef string) []string {
 	return []string{"-c", "rerere.enabled=false", "merge", "--no-ff", "--no-edit", targetRef}
 }

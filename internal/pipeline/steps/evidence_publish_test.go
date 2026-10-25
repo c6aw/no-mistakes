@@ -344,7 +344,7 @@ func TestPublishRunEvidence_RedactsRunWorktreePaths(t *testing.T) {
 		t.Fatal("evidence did not publish")
 	}
 	got := gitCmd(t, remote, "cat-file", "-p", "refs/heads/no-mistakes/evidence:.no-mistakes/evidence/feature/add-login/cli-run.txt")
-	if want := "ran {run-worktree}/bin/tool\nsaw {run-worktree}/out.log"; got != want {
+	if want := "ran " + filepath.Join("{run-worktree}", "bin", "tool") + "\nsaw " + filepath.Join("{run-worktree}", "out.log"); got != want {
 		t.Errorf("published text = %q, want %q", got, want)
 	}
 }

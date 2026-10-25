@@ -509,7 +509,7 @@ func TestPublish_RedactsRunWorktreePathsInTextEvidence(t *testing.T) {
 	got := runGit(t, remote, "cat-file", "-p", result.CommitSHA+":.no-mistakes/evidence/fm/add-login/logs/run.txt")
 	want := "ran {run-worktree}/bin/tool\n" +
 		"cd {run-worktree}\n" +
-		"saw {run-worktree}/out.log\n" +
+		"saw " + filepath.Join("{run-worktree}", "out.log") + "\n" +
 		"listed {worktrees} and {worktrees}\n" +
 		"kept {run-worktree}/x"
 	if got != want {

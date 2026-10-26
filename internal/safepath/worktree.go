@@ -49,6 +49,9 @@ func pathSegment(rest string) int {
 	switch {
 	case strings.HasPrefix(rest, `\\`):
 		sep = 2
+	case strings.HasPrefix(rest, `\n`), strings.HasPrefix(rest, `\r`), strings.HasPrefix(rest, `\t`):
+		// A JSON string escape, not a separator (as in boundaryBefore).
+		return 0
 	case strings.HasPrefix(rest, "/"), strings.HasPrefix(rest, `\`):
 		sep = 1
 	default:
